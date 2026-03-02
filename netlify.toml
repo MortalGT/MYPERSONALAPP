@@ -1,0 +1,10 @@
+[build]
+  # No build step is required for our vanilla frontend
+  command = "echo 'No build command needed'"
+  # The output folder containing index.html
+  publish = "public"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
