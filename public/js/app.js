@@ -84,62 +84,111 @@ document.addEventListener('DOMContentLoaded', () => {
         if (viewName === 'tasks') loadTasks();
     }
 
-    // --- API Calls ---
+    // --- LocalStorage DAO ---
+
+    function getStorageData() {
+        const data = localStorage.getItem('todo_app_data');
+        if (data) return JSON.parse(data);
+
+        // Default seed data
+        const initialData = {
+            tasks: [
+                { id: 1, title: 'Dream11 SAP Integration', description: 'Setup RFC connections for new module', category: 'project', project_name: 'Dream11', assigned_to: 'Ganesh Tate', priority: 'High', status: 'In Progress', due_date: getDueDate(2) },
+                { id: 2, title: 'GM Fabrics GST Module Update', description: 'Fix calculation bug in tax report', category: 'issue', project_name: 'GM Fabrics', assigned_to: 'Jane Smith', priority: 'High', status: 'Pending', due_date: getDueDate(-1) },
+                { id: 3, title: 'Shree Durga BTP Deployment', description: 'Deploy the new UI5 app to BTP', category: 'project', project_name: 'Shree Durga', assigned_to: 'Ganesh Tate', priority: 'Medium', status: 'Pending', due_date: getDueDate(5) },
+                { id: 4, title: 'Team Weekly Sync', description: 'Review Sprint progress', category: 'team', project_name: null, assigned_to: null, priority: 'Low', status: 'Pending', due_date: getDueDate(0) }
+            ],
+            teamMembers: [
+                { id: 1, name: 'Ganesh Tate', role: 'Lead', skills: 'SAP, Fullstack' },
+                { id: 2, name: 'John Doe', role: 'Developer', skills: 'Frontend, UI' },
+                { id: 3, name: 'Jane Smith', role: 'Developer', skills: 'Backend, DB' }
+            ]
+        };
+        localStorage.setItem('todo_app_data', JSON.stringify(initialData));
+        return initialData;
+    }
+
+    function saveStorageData(data) {
+        localStorage.setItem('todo_app_data', JSON.stringify(data));
+    }
+
+    function getDueDate(daysOffset) {
+        const date = new Date();
+        date.setDate(date.getDate() + daysOffset);
+        return date.toISOString().split('T')[0];
+    }
+
+    // --- Data Loading ---
 
     async function fetchTeamMembers() {
-        try {
-            const res = await fetch('/api/team');
-            teamMembers = await res.json();
+        const data = getStorageData();
+        teamMembers = data.teamMembers;
 
-            const assignedSelect = document.getElementById('form-assigned');
-            assignedSelect.innerHTML = '<option value="">Unassigned</option>' +
-                teamMembers.map(m => `<option value="${m.name}">${m.name} (${m.role})</option>`).join('');
-        } catch (error) {
-            console.error('Failed to fetch team members:', error);
-        }
+        const assignedSelect = document.getElementById('form-assigned');
+        assignedSelect.innerHTML = '<option value="">Unassigned</option>' +
+            teamMembers.map(m => `<option value="${m.name}">${m.name} (${m.role})</option>`).join('');
     }
 
     async function loadDashboard() {
         if (currentView !== 'dashboard') return;
-        try {
-            const res = await fetch('/api/dashboard');
-            const data = await res.json();
 
-            // Update Summary Cards
-            document.getElementById('stat-total').textContent = data.summary.total;
-            document.getElementById('stat-overdue').textContent = data.summary.overdue;
+        const data = getStorageData();
+        const allTasks = data.tasks;
+        const today = new Date().toISOString().split('T')[0];
 
-            const inProg = data.byStatus.find(s => s.status === 'In Progress');
-            document.getElementById('stat-in-progress').textContent = inProg ? inProg.count : 0;
+        // Calculate Summary stats
+        const total = allTasks.length;
+        const overdue = allTasks.filter(t => t.due_date && t.due_date < today && t.status !== 'Done').length;
+        const inProg = allTasks.filter(t => t.status === 'In Progress').length;
+        const done = allTasks.filter(t => t.status === 'Done').length;
 
-            const done = data.byStatus.find(s => s.status === 'Done');
-            document.getElementById('stat-done').textContent = done ? done.count : 0;
+        document.getElementById('stat-total').textContent = total;
+        document.getElementById('stat-overdue').textContent = overdue;
+        document.getElementById('stat-in-progress').textContent = inProg;
+        document.getElementById('stat-done').textContent = done;
 
-            // Render simple bar charts
-            renderChart('chart-category', data.byCategory, data.summary.total);
-            renderChart('chart-priority', data.byPriority, data.summary.total);
+        // Calculate Charts (group by)
+        const categories = {};
+        const priorities = {};
 
-        } catch (error) {
-            console.error('Failed to load dashboard:', error);
-        }
+        allTasks.forEach(t => {
+            categories[t.category] = (categories[t.category] || 0) + 1;
+            priorities[t.priority] = (priorities[t.priority] || 0) + 1;
+        });
+
+        const byCategory = Object.entries(categories).map(([k, v]) => ({ category: k, count: v }));
+        const byPriority = Object.entries(priorities).map(([k, v]) => ({ priority: k, count: v }));
+
+        renderChart('chart-category', byCategory, total);
+        renderChart('chart-priority', byPriority, total);
     }
 
     async function loadTasks() {
         if (currentView !== 'tasks') return;
 
-        const params = new URLSearchParams();
-        if (filterCategory.value) params.append('category', filterCategory.value);
-        if (filterStatus.value) params.append('status', filterStatus.value);
-        if (filterPriority.value) params.append('priority', filterPriority.value);
-        if (searchInput.value) params.append('search', searchInput.value);
+        const data = getStorageData();
+        let filteredTasks = data.tasks;
 
-        try {
-            const res = await fetch(`/api/tasks?${params.toString()}`);
-            tasks = await res.json();
-            renderTasksTable();
-        } catch (error) {
-            console.error('Failed to load tasks:', error);
+        const cat = filterCategory.value;
+        const stat = filterStatus.value;
+        const pri = filterPriority.value;
+        const search = searchInput.value.toLowerCase();
+
+        if (cat) filteredTasks = filteredTasks.filter(t => t.category === cat);
+        if (stat) filteredTasks = filteredTasks.filter(t => t.status === stat);
+        if (pri) filteredTasks = filteredTasks.filter(t => t.priority === pri);
+        if (search) {
+            filteredTasks = filteredTasks.filter(t =>
+                t.title.toLowerCase().includes(search) ||
+                (t.description && t.description.toLowerCase().includes(search))
+            );
         }
+
+        // Sort by due date
+        filteredTasks.sort((a, b) => (a.due_date || '9999-12-31').localeCompare(b.due_date || '9999-12-31'));
+
+        tasks = filteredTasks;
+        renderTasksTable();
     }
 
     async function handleTaskSubmit(e) {
@@ -157,34 +206,34 @@ document.addEventListener('DOMContentLoaded', () => {
             due_date: document.getElementById('form-due-date').value
         };
 
-        try {
-            const url = taskId ? `/api/tasks/${taskId}` : '/api/tasks';
-            const method = taskId ? 'PUT' : 'POST';
+        const data = getStorageData();
 
-            const res = await fetch(url, {
-                method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(taskData)
-            });
-
-            if (res.ok) {
-                closeModal();
-                if (currentView === 'tasks') loadTasks();
-                if (currentView === 'dashboard') loadDashboard();
+        if (taskId) {
+            // Update
+            const index = data.tasks.findIndex(t => t.id == taskId);
+            if (index !== -1) {
+                data.tasks[index] = { ...data.tasks[index], ...taskData, updated_at: new Date().toISOString() };
             }
-        } catch (error) {
-            console.error('Failed to save task:', error);
+        } else {
+            // Create
+            const newId = data.tasks.length > 0 ? Math.max(...data.tasks.map(t => t.id)) + 1 : 1;
+            data.tasks.push({ ...taskData, id: newId, created_at: new Date().toISOString() });
         }
+
+        saveStorageData(data);
+        closeModal();
+        if (currentView === 'tasks') loadTasks();
+        if (currentView === 'dashboard') loadDashboard();
     }
 
     async function deleteTask(id) {
         if (!confirm('Are you sure you want to delete this task?')) return;
-        try {
-            const res = await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
-            if (res.ok) loadTasks();
-        } catch (error) {
-            console.error('Failed to delete task:', error);
-        }
+
+        const data = getStorageData();
+        data.tasks = data.tasks.filter(t => t.id != id);
+        saveStorageData(data);
+
+        loadTasks();
     }
 
     // --- DOM Rendering ---
@@ -246,13 +295,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Modal Logic ---
 
     window.editTask = async function (id) {
-        try {
-            const res = await fetch(`/api/tasks/${id}`);
-            const task = await res.json();
-            openModal(task);
-        } catch (error) {
-            console.error('Failed to load task details:', error);
-        }
+        const data = getStorageData();
+        const task = data.tasks.find(t => t.id == id);
+        if (task) openModal(task);
     };
 
     window.deleteTask = deleteTask;
