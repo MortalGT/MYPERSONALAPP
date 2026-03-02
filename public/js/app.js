@@ -56,6 +56,19 @@ document.addEventListener('DOMContentLoaded', () => {
         btnCloseModal.addEventListener('click', closeModal);
         btnCancel.addEventListener('click', closeModal);
 
+        // Sidebar Toggle
+        const sidebar = document.getElementById('sidebar');
+        const btnToggle = document.getElementById('btn-mobile-toggle');
+        const btnCloseSidebar = document.getElementById('btn-close-sidebar');
+
+        btnToggle.addEventListener('click', () => {
+            sidebar.classList.add('open');
+        });
+
+        btnCloseSidebar.addEventListener('click', () => {
+            sidebar.classList.remove('open');
+        });
+
         // Form submit
         taskForm.addEventListener('submit', handleTaskSubmit);
     }
